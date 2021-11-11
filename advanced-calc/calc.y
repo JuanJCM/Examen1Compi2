@@ -18,75 +18,86 @@
 %union{
   float float_t;
   const char* string_t;
+  Expr * expr_t;
+  Statement *statement_t;
 }
 
 %token EOL
 %token ADD SUB MUL DIV IF THEN ENDIF WHILE DO DONE ELSE LET
-%token<float_t> TK_ID, NUMBER
+%token<float_t> NUMBER
+%token<string_t> TK_ID
+
+%type<expr_t> assignment_expression expression factor rational_expression
+%type<statement_t> statement block_statement while_statement method_declaration
+%
 %%
 start: start external_declaration
     |external_declaration
      ;
 
-external_declaration: method_declaration
-    | global_declaration
+external_declaration: method_declaration 
+    | global_declaration {$$ = new GlobalDeclaration($1);}
     ;
 
-method_declaration: LET TK_ID '(' list_params ')' '=' block_statement 
+method_declaration: LET TK_ID '(' list_params ')' '=' block_statement{$$ = new MethodDeclaration(*$6, yylineno); delete $6; printf("Metodo %s agregado", $2);} 
     ;
 
-list_params : params',' list_params
-    |params
+list_params : params',' list_params{$$ = $3; $$->pushback($1);}
+    |params {$$=$1;}
     ;
 
-params: TK_ID
+params: term {$$ = $1;}
+    | /*nada*/
     ;
 
-global_declaration: statement
-    | expression
-    |variable_declaration
-    |callfunction
+global_declaration: statement{$$ = $1;}
+    | expression {$$ = $1;}
+    |variable_declaration {$$ = $1;}
+    |callfunction {$$ = $1;}
     ;
-callfunction: 
+callfunction: TK_ID'('list_params')' {$$= new CallFunction(yylineno);}
+    | TK_ID'(' ')'
     ;
-statement: while_statement
-    | assignment_expression
-    ;
-
-variable_declaration: LET TK_ID '=' expression
+statement: while_statement {$$= $1;}
+    | assignment_expression{$$ = $1;}
     ;
 
-while_statement: WHILE '(' expression')' DO block_statement DONE
+variable_declaration: LET TK_ID '=' expression{$$ = new VariableDeclaration(yylineno); printf("Variable %s declarada ", $2);}
     ;
 
-block_statement: expression_list';' block_statement
-    |statement';' block_statement
+while_statement: WHILE '(' expression')' DO block_statement DONE{$$ = new WhileStatement($3); $$ = $5;}
+    ;
+
+block_statement: statement';' block_statement{
+    $$ = $2; 
+    $$->pushback($1);
+    $$ = new BlockStatement($3,$2,yylineno);
+}
     |/*nada*/
     ;
 
-assignment_expression:  TK_ID '=' expression
+assignment_expression:  TK_ID '=' expression {$$ = new AssignExpr($3, yylineno);}
     ;
 
-expression_list: expression_list expression EOL {printf("= %d\n", $2)} 
-    | /*nada*/
+expression_list: expression_list expression {$$ = $1; $$->pushback($2);} 
     ;
-expression: expression ADD factor {$$ = $1 + $3;}
-    | expression SUB factor {$$ = $1 - $3;}
-    | factor {$$ = $1}
-    ;
-
-factor: factor MUL relational {$$= $1 * $3;}
-    | factor DIV relational {$$ = $1 / $3;}
-    | relational{$$ = $1}
+expression: expression ADD factor {$$ = new AddExpr($1, $3, yylineno);}
+    | expression SUB factor {$$ = new SubExpr($1, $3, yylineno);}
+    | factor {$$ = $1;}
     ;
 
-relational: relational '>' term {$$ = $1 > $3}
-    | relational '<' term {$$ = $1 < $3}
+factor: factor MUL rational_expression{$$ = new MultExpr($1, $3, yylineno);}
+    | factor DIV rational_expression {$$ = new DivExpr($1, $3, yylineno);}
+    |rational_expression {$$= $1;}
+    ;
+
+rational_expression: rational_expression '>' term {$$ = new GtrExpr($1, $3, yylineno);}
+    | rational_expression '<' term {$$ = new LssExpr($1, $3, yylineno);}
     | term {$$ = $1}
     ;
 
-term: NUMBER {$$ = $1;}
-    | TK_ID  {$$ = $1;}
+term: NUMBER {$$ = new FloatExpr($1, yylineno);}
+    | TK_ID  {$$ = new IdExpr($1, yylineno);}
     ;
 
 %%
